@@ -1,0 +1,130 @@
+---
+- name: installing k8s 
+  hosts: all 
+  become: yes
+
+  tasks:
+    - name: installing ca-certificates, curl, gnupg
+      apt: 
+        name: 
+          - ca-certificates 
+          - curl 
+          - gnupg 
+        state: present
+        update_cache: yes
+    
+    - name: Create directory with specific permissions
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add Docker GPG key to apt keyring
+      shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+    - name: Adding read permission to /etc/apt/keyrings/docker.gpg
+      file: 
+        path: /etc/apt/keyrings/docker.gpg
+        mode: '0644'
+
+    - name: Add Docker repository to apt sources list
+      shell: |
+        echo \
+          "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+          "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    - name: installing containerd.io 
+      apt: 
+        update_cache: yes 
+        name: 
+          - containerd.io
+
+    - name: configuring containerd
+      shell: containerd config default > /etc/containerd/config.toml
+
+    - name: modifying config.toml to enable SystemdCgroup 
+      lineinfile: 
+        path: /etc/containerd/config.toml 
+        regexp: '^SystemdCgroup = false'
+        line: '^SystemdCgroup = true'
+
+    - name: systemd daemon reload 
+      systemd: 
+        daemon_reload: yes
+      notify: "restart containerd" 
+
+    - name: adding br_netfilter module to kernel 
+      modprobe: 
+        name: br_netfilter
+
+    - name: make this br_netfilter module persistant to reboot 
+      lineinfile: 
+        path: /etc/modules-load.d/br_netfilter.conf 
+        create: yes 
+        line: 'br_netfilter'
+
+    - name: adding overlay module to the kernel 
+      modprobe: 
+        name: overlay 
+
+    - name: make this overlay module persistant at reboot 
+      lineinfile: 
+        path: /etc/modules-load.d/overlay.conf
+        create: yes
+        line: 'overlay'
+
+    - name: uncomment net.ipv4.ip_forward=1
+      lineinfile: 
+        path: /etc/sysctl.conf 
+        regexp: '^#?net.ipv4.ip_forward=1'
+        line: '^net.ipv4.ip_forward=1'
+      notify: "reload sysctl"
+
+    - name: disabling swap 
+      shell: swapoff -a 
+
+    - name: removing swap record from /etc/fstab 
+      replace: 
+        path: /etc/fstab
+        regexp: '^/dev/mapper/.*swap.*$'
+        replace: ''
+
+    - name: installing below dependencies
+      apt: 
+        update_cache: yes
+        name: 
+          - apt-transport-https
+          - ca-certificates
+          - curl 
+        state: present
+
+    - name: adding kubernetes keyring
+      shell: curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
+
+
+    - name: adding kubernetes apt repository
+      shell: echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+    - name: installing kubectl, kubeadm, kubelet
+      apt: 
+        update_cache: yes
+        name: 
+          - kubectl 
+          - kubeadm 
+          - kubelet
+        state: present 
+
+    - name: hold kubernetes package versions 
+      shell: sudo apt-mark hold kubelet kubeadm kubectl 
+
+  handlers:
+  - name: restart containerd 
+    systemd: 
+      name: containerd.service 
+      state: restarted
+    listen: "restart containerd"
+
+  - name: reload sysctl settings 
+    shell: sysctl --system
+    listen: "reload sysctl"
