@@ -1,11 +1,3 @@
-A
-A
-A
-A
-B
-B
-C
-C
 
 # ansible_playbooks
 This repository contains my ansible playbooks for different tasks.
