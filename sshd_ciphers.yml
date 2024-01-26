@@ -1,0 +1,19 @@
+---
+- name: Update Ciphers in sshd_config
+  hosts: ubuntu
+  gather_facts: false
+
+  tasks:
+    - name: if Ciphers exist replace them
+      replace:
+        path: /etc/ssh/sshd_config
+        regexp: '^Ciphers.*$'
+        replace: 'Ciphers aes256-ctr,aes256-gcm@openssh.com,aes128-ctr,aes128-gcm@openssh.com,aes192-ctr'
+      tags:
+        - Ciphers
+
+    - name: if Ciphers don not exist add them
+      shell: "grep -qE '^Ciphers.*$' /etc/ssh/sshd_config || echo 'Ciphers aes256-ctr,aes256-gcm@openssh.com,aes128-ctr,aes128-gcm@openssh.com,aes192-ctr' >> /etc/ssh/sshd_config"
+      tags:
+        - Ciphers 
+...
